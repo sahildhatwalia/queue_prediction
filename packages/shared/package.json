@@ -1,0 +1,10 @@
+{
+  "name": "@hospital-queue/shared",
+  "version": "1.0.0",
+  "main": "./src/index.js",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "lint": "eslint src/"
+  }
+}

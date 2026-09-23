@@ -1,0 +1,22 @@
+{
+  "name": "hospital-queue",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=web",
+    "db:migrate": "npm run prisma:migrate --workspace=apps/api",
+    "db:seed": "npm run prisma:seed --workspace=apps/api",
+    "db:studio": "npm run prisma:studio --workspace=apps/api",
+    "db:migrate:deploy": "npm run prisma:migrate:deploy --workspace=apps/api",
+    "docker:dev": "docker compose up postgres redis -d"
+  },
+  "devDependencies": {
+    "turbo": "^2.1.2"
+  }
+}

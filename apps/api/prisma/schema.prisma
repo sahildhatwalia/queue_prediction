@@ -1,0 +1,271 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  PATIENT
+  DOCTOR
+  NURSE
+  RECEPTIONIST
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum QueueStatus {
+  WAITING
+  CALLED
+  IN_CONSULTATION
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+enum Priority {
+  CRITICAL // Emergency — jump to front
+  HIGH // Urgent — within 30 min
+  NORMAL // Standard OPD
+  LOW // Follow-up / routine
+}
+
+enum NotificationType {
+  SMS
+  EMAIL
+  PUSH
+  IN_APP
+}
+
+enum AppointmentType {
+  WALK_IN
+  PRE_BOOKED
+  EMERGENCY
+  FOLLOW_UP
+}
+
+// ─── CORE MODELS ─────────────────────────────────────────────────────────────
+
+model User {
+  id               String    @id @default(cuid())
+  email            String?   @unique
+  phone            String?   @unique
+  passwordHash     String?
+  role             Role      @default(PATIENT)
+  firstName        String
+  lastName         String
+  dateOfBirth      DateTime?
+  gender           String?
+  bloodGroup       String?
+  address          Json? // encrypted JSON
+  isEmailVerified  Boolean   @default(false)
+  isPhoneVerified  Boolean   @default(false)
+  isActive         Boolean   @default(true)
+  twoFactorEnabled Boolean   @default(false)
+  twoFactorSecret  String? // TOTP secret, encrypted
+  lastLoginAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // Relations
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  refreshTokens RefreshToken[]
+  queueEntries  QueueEntry[]
+  notifications Notification[]
+  doctorProfile DoctorProfile?
+  staffProfile  StaffProfile?
+
+  @@index([email])
+  @@index([phone])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  family    String // token rotation family to detect reuse attacks
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+model Department {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  code              String   @unique // e.g. "CARD", "ORTHO"
+  floor             Int?
+  averageServiceMin Int      @default(15) // baseline service time
+  maxCapacity       Int      @default(30)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  doctors      DoctorProfile[]
+  queueEntries QueueEntry[]
+  counters     Counter[]
+  predictions  WaitPrediction[]
+}
+
+model DoctorProfile {
+  id             String     @id @default(cuid())
+  userId         String     @unique
+  user           User       @relation(fields: [userId], references: [id])
+  departmentId   String
+  department     Department @relation(fields: [departmentId], references: [id])
+  specialization String?
+  licenseNumber  String?    @unique
+  avgConsultMin  Int        @default(10) // personal average
+  isAvailable    Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+}
+
+model StaffProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  position  String
+  createdAt DateTime @default(now())
+}
+
+model Counter {
+  id           String     @id @default(cuid())
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  name         String // e.g. "Counter 1", "Room A"
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+
+  queueEntries QueueEntry[]
+}
+
+model QueueEntry {
+  id              String          @id @default(cuid())
+  token           String          @unique // e.g. "CARD-042"
+  patientId       String
+  patient         User            @relation(fields: [patientId], references: [id])
+  departmentId    String
+  department      Department      @relation(fields: [departmentId], references: [id])
+  counterId       String?
+  counter         Counter?        @relation(fields: [counterId], references: [id])
+  appointmentType AppointmentType @default(WALK_IN)
+  priority        Priority        @default(NORMAL)
+  priorityScore   Int             @default(50) // 0-100, computed
+  status          QueueStatus     @default(WAITING)
+
+  // Timing
+  checkInAt      DateTime  @default(now())
+  calledAt       DateTime?
+  consultStartAt DateTime?
+  consultEndAt   DateTime?
+
+  // Prediction tracking
+  predictedWaitMin Int? // ML prediction at check-in
+  actualWaitMin    Int? // computed on completion
+  predictionError  Float? // |predicted - actual| for model eval
+
+  // Symptom data (anonymized after consultation)
+  symptoms  String?
+  painLevel Int? // 1-10
+  notes     String?
+
+  position  Int? // position in queue at check-in
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  predictions   WaitPrediction[]
+  notifications Notification[]
+
+  @@index([departmentId, status])
+  @@index([patientId])
+  @@index([checkInAt])
+}
+
+model WaitPrediction {
+  id               String     @id @default(cuid())
+  queueEntryId     String
+  queueEntry       QueueEntry @relation(fields: [queueEntryId], references: [id])
+  departmentId     String
+  department       Department @relation(fields: [departmentId], references: [id])
+  predictedMin     Int
+  confidenceScore  Float // 0-1
+  modelVersion     String
+  featuresSnapshot Json // what features were passed to the model
+  createdAt        DateTime   @default(now())
+
+  @@index([queueEntryId])
+}
+
+model Notification {
+  id           String           @id @default(cuid())
+  userId       String
+  user         User             @relation(fields: [userId], references: [id])
+  queueEntryId String?
+  queueEntry   QueueEntry?      @relation(fields: [queueEntryId], references: [id])
+  type         NotificationType
+  subject      String?
+  body         String
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  readAt       DateTime?
+  failed       Boolean          @default(false)
+  failReason   String?
+  createdAt    DateTime         @default(now())
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String // e.g. "QUEUE_ENTRY_CREATED", "USER_LOGIN", "PRIORITY_CHANGED"
+  entityType String? // e.g. "QueueEntry", "User"
+  entityId   String?
+  oldValue   Json?
+  newValue   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model ModelTrainingLog {
+  id              String   @id @default(cuid())
+  modelVersion    String
+  trainedAt       DateTime @default(now())
+  samplesUsed     Int
+  maeMinutes      Float // Mean Absolute Error in minutes
+  r2Score         Float
+  featuresUsed    Json
+  hyperparameters Json
+  notes           String?
+}

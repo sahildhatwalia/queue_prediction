@@ -64,7 +64,6 @@ Health check: http://localhost:4000/api/v1/health
 
 ```bash
 # In another terminal — starts on port 3000
-cd apps/web
 npm run dev
 ```
 

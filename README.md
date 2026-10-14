@@ -1,6 +1,7 @@
 # 🏥 MediQueue — Hospital Queue Prediction System
 
-A full-stack, real-time hospital queue management system with ML-powered wait time predictions. Built entirely in **JavaScript** (Node.js backend, Next.js frontend, Python FastAPI ML service).
+A full-stack, real-time hospital queue management system with ML-powered wait time predictions.  
+Built with **Node.js** (Express API), **Next.js** (frontend), and **Python FastAPI** (ML service).
 
 ---
 
@@ -8,42 +9,52 @@ A full-stack, real-time hospital queue management system with ML-powered wait ti
 
 ### Prerequisites
 - **Node.js 20+** — [Download](https://nodejs.org/)
-- **Docker Desktop** — [Download](https://www.docker.com/products/docker-desktop/) *(for PostgreSQL + Redis)*
-- **Python 3.11+** — [Download](https://www.python.org/) *(for ML service)*
+- **PostgreSQL 15+** — install locally or use a managed service
+- **Redis 7+** — install locally (Windows: [Memurai](https://www.memurai.com/) or [Redis MSI](https://github.com/microsoftarchive/redis/releases))
+- **Python 3.11+** — [Download](https://www.python.org/) *(for ML service, optional)*
 
 ---
 
-## Step 1 — Start the Database & Redis
+## Step 1 — Configure Environment
+
+Copy the example env file and fill in your local PostgreSQL / Redis credentials:
 
 ```bash
-# From project root — starts PostgreSQL + Redis
-docker compose up postgres redis -d
+# Root .env (shared reference)
+cp .env.example .env
 ```
 
-Wait ~10 seconds for services to be healthy.
+Edit `.env` and `server/.env` with your local DB credentials:
+```env
+DATABASE_URL=postgresql://hospital:hospitalpass@localhost:5432/hospital_queue
+REDIS_URL=redis://:redispass@localhost:6379
+```
+
+> Make sure your local PostgreSQL has a database `hospital_queue` and a user `hospital` with password `hospitalpass`.  
+> Or adjust the connection string to match your local setup.
 
 ---
 
 ## Step 2 — Install Dependencies
 
 ```bash
-# From project root
+# From project root — installs all workspace packages
 npm install
 ```
 
 ---
 
-## Step 3 — Setup the API Database
+## Step 3 — Setup the Database
 
 ```bash
 # Generate Prisma client
-npm run --workspace=apps/api prisma:generate
+npm run db:generate
 
 # Run migrations (creates all tables)
-npm run --workspace=apps/api prisma:migrate
+npm run db:migrate
 
 # Seed demo data (departments + staff accounts)
-npm run --workspace=apps/api prisma:seed
+npm run db:seed
 ```
 
 ---
@@ -52,7 +63,7 @@ npm run --workspace=apps/api prisma:seed
 
 ```bash
 # In one terminal — starts on port 4000
-cd apps/api
+cd server
 npm run dev
 ```
 
@@ -64,6 +75,7 @@ Health check: http://localhost:4000/api/v1/health
 
 ```bash
 # In another terminal — starts on port 3000
+cd client
 npm run dev
 ```
 
@@ -74,7 +86,7 @@ Open: http://localhost:3000
 ## Step 6 — (Optional) Run the ML Service
 
 ```bash
-cd apps/ml
+cd ml-service
 
 # Create virtual environment
 python -m venv venv
@@ -107,14 +119,12 @@ ML API docs: http://localhost:8000/docs
 ## 🏗️ Architecture
 
 ```
-hospital-queue/
-├── apps/
-│   ├── api/          # Express.js REST + Socket.IO API (port 4000)
-│   ├── web/          # Next.js 16 frontend (port 3000)
-│   └── ml/           # Python FastAPI ML service (port 8000)
-├── packages/
-│   └── shared/       # Shared JS constants (roles, events, types)
-└── docker-compose.yml  # PostgreSQL + Redis + MLflow
+queue_prediction/
+├── server/           # Express.js REST + Socket.IO API (port 4000)
+├── client/           # Next.js 16 frontend (port 3000)
+├── ml-service/       # Python FastAPI ML service (port 8000)
+└── packages/
+    └── shared/       # Shared JS constants (roles, events, types)
 ```
 
 ## 📡 API Endpoints
